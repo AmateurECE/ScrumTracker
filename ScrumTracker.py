@@ -12,10 +12,19 @@
 
 from argparse import ArgumentParser
 import csv
+import math
 
 ###############################################################################
 # TimeCampParser
 ###
+
+def normalize(theList, theTree):
+    for project in theTree['nodes'][0]['nodes']:
+        for sprint in project['nodes']:
+            for story in sprint['nodes']:
+                story['sprint'] = sprint['name']
+                story['project'] = project['name']
+                theList.append(story)
 
 def getHeight(node, distance):
     if 'nodes' in node and node['nodes']:
@@ -48,9 +57,10 @@ def doTimeCampParsing(parent, root, inputFile):
                 parent['nodes'].append(node)
                 doTimeCampParsing(node, root, inputFile)
         else:
+            if line[0] == 'Total':
+                root['Total'] = getMinutes(line[1])
+                return
             node = {'name': line[0], 'time': getMinutes(line[1])}
-            if line[0] is 'Total':
-                return # Ignore the 'Total' line.
             parent['nodes'].append(node)
             doTimeCampParsing(parent, root, inputFile)
     except StopIteration:
@@ -63,7 +73,38 @@ def timecampParser(inputFile):
         index = {'name': 'TimeCamp', 'nodes': []}
         reader.__next__() # Eat the header
         doTimeCampParsing(index, index, reader)
-        return index
+        normalized = []
+        normalize(normalized, index)
+        return normalized, index['Total']
+
+###############################################################################
+# Metrics
+###
+
+def getTotalStoryPoints(stories, display=True):
+    total = 0
+    for story in stories:
+        total += int(story['name'].split()[0][1:-1])
+    if display:
+        print('Total story points: {}'.format(total))
+    return total
+
+def getTotalTime(total, display=True):
+    if display:
+        printTime = '{}h {}m'.format(math.floor(total / 60), total % 60)
+        print('Total time: {}'.format(printTime))
+    return total
+
+def getMinutesPerPoint(storyPoints, totalTime, display=True):
+    velocity = totalTime / storyPoints
+    if display:
+        print('Velocity: {} mins/point'.format(velocity))
+    return velocity
+
+def getMetrics(stories, totalTime):
+    storyPoints = getTotalStoryPoints(stories)
+    totalTime = getTotalTime(totalTime)
+    getMinutesPerPoint(storyPoints, totalTime)
 
 ###############################################################################
 # Main
@@ -80,7 +121,8 @@ def parseArguments():
 def main():
     arguments = parseArguments()
     handlers = {'timecamp': timecampParser}
-    print(handlers[arguments['parser']](arguments['inputFile']))
+    stories, total = handlers[arguments['parser']](arguments['inputFile'])
+    getMetrics(stories, total)
 
 if __name__ == '__main__':
     main()
