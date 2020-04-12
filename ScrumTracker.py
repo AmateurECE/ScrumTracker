@@ -7,7 +7,7 @@
 #
 # CREATED:          04/10/2020
 #
-# LAST EDITED:      04/11/2020
+# LAST EDITED:      04/12/2020
 ###
 
 from argparse import ArgumentParser
@@ -25,6 +25,13 @@ def normalize(theList, theTree):
                 story['sprint'] = sprint['name']
                 story['project'] = project['name']
                 theList.append(story)
+
+def getTotals(totals, theTree):
+    if 'total' not in theTree:
+        return
+    totals[theTree['name']] = theTree['total']
+    for node in theTree['nodes']:
+        getTotals(totals, node)
 
 def getHeight(node, distance):
     if 'nodes' in node and node['nodes']:
@@ -48,7 +55,7 @@ def doTimeCampParsing(parent, root, inputFile):
     try:
         line = inputFile.__next__()
         if line[2] == '': # If (!isLeaf(node))
-            node = {'name': line[0], 'nodes': []}
+            node = {'name': line[0], 'nodes': [], 'total': getMinutes(line[1])}
             if parent['nodes'] and 'time' in parent['nodes'][0]:
                 doTimeCampParsing(node, root, inputFile)
                 specialAttach(node, root, getHeight(root, 0)
@@ -58,7 +65,7 @@ def doTimeCampParsing(parent, root, inputFile):
                 doTimeCampParsing(node, root, inputFile)
         else:
             if line[0] == 'Total':
-                root['Total'] = getMinutes(line[1])
+                root['total'] = getMinutes(line[1])
                 return
             node = {'name': line[0], 'time': getMinutes(line[1])}
             parent['nodes'].append(node)
@@ -75,7 +82,9 @@ def timecampParser(inputFile):
         doTimeCampParsing(index, index, reader)
         normalized = []
         normalize(normalized, index)
-        return normalized, index['Total']
+        totals = {}
+        getTotals(totals, index)
+        return normalized, totals
 
 ###############################################################################
 # Metrics
@@ -101,10 +110,47 @@ def getMinutesPerPoint(storyPoints, totalTime, display=True):
         print('Velocity: {} mins/point'.format(velocity))
     return velocity
 
-def getMetrics(stories, totalTime):
+def getSprints(stories):
+    sprints = {}
+    for story in stories:
+        if story['sprint'] not in sprints:
+            sprints[story['sprint']] = []
+        sprints[story['sprint']].append(story)
+    return sprints
+
+def getAverageStoryPointsPerSprint(totalStoryPointsBySprint, display=True):
+    average = 0
+    for sprint in totalStoryPointsBySprint:
+        average += sprint
+    average /= len(totalStoryPointsBySprint)
+    if display:
+        print('Average story points per sprint: {}'.format(average))
+
+def getAverageTimePerSprint(totalTimeBySprint, display=True):
+    average = 0
+    for sprint in totalTimeBySprint:
+        average += sprint
+    average /= len(totalTimeBySprint)
+    if display:
+        printTime = '{}h {}m'.format(math.floor(average / 60), average % 60)
+        print('Average time per sprint: {}'.format(printTime))
+
+def getMetrics(stories, totals):
     storyPoints = getTotalStoryPoints(stories)
-    totalTime = getTotalTime(totalTime)
+    totalTime = getTotalTime(totals['TimeCamp'])
     getMinutesPerPoint(storyPoints, totalTime)
+    sprints = getSprints(stories)
+
+    totalStoryPointsBySprint = []
+    totalTimeBySprint = []
+    for sprint in sprints:
+        print('\n{}:'.format(sprints[sprint][0]['sprint']))
+        totalStoryPointsBySprint.append(getTotalStoryPoints(sprints[sprint]))
+        totalTimeBySprint.append(getTotalTime(totals[sprint]))
+
+    print()
+    getAverageStoryPointsPerSprint(totalStoryPointsBySprint)
+    getAverageTimePerSprint(totalTimeBySprint)
 
 ###############################################################################
 # Main
@@ -121,8 +167,8 @@ def parseArguments():
 def main():
     arguments = parseArguments()
     handlers = {'timecamp': timecampParser}
-    stories, total = handlers[arguments['parser']](arguments['inputFile'])
-    getMetrics(stories, total)
+    stories, totals = handlers[arguments['parser']](arguments['inputFile'])
+    getMetrics(stories, totals)
 
 if __name__ == '__main__':
     main()
